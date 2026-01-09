@@ -133,24 +133,7 @@ async function getTradeTypeForSentiment(sentiment, index) {
 }
 
 // --- Status Tracker ---
-async function waitForContractResult(contractId) {
-  return new Promise((resolve, reject) => {
-    const unsubscribe = connection.subscribePOC(contractId, (poc) => {
-      // Check if contract is sold
-      if (poc.is_sold) {
-        unsubscribe();
-        clearTimeout(timeoutId); // Important: stop the timer
-        resolve(poc);
-      }
-    });
-
-    // Safety timeout (e.g. 2 minutes max trade duration)
-    const timeoutId = setTimeout(() => {
-      unsubscribe();
-      resolve(null); // Resolve with null to trigger fallback
-    }, 120000);
-  });
-}
+// (Removed robust tracking as requested)
 
 // --- WaitForFirstTick ---
 // --- WaitForFirstTick ---
@@ -258,50 +241,29 @@ async function buyContract(symbol, tradeType, duration, price, prediction = null
     return { error: buyResp.error };
   }
 
-  console.log("🎉 Trade executed, waiting for result...", buyResp.buy.contract_id);
+  console.log("🎉 Trade executed:", propId);
 
-  // 5) Wait for Contract Result (Accurate Profit/Loss)
-  let contractResult;
-  try {
-    const contractId = Number(buyResp.buy.contract_id);
-    contractResult = await waitForContractResult(contractId);
-  } catch (e) {
-    console.error("Error waiting for contract:", e);
-  }
-
-  // 6) Fetch Final Balance
-  // Now that contract is sold, balance should be updated.
-  // We add a small buffer just in case the 'sold' event slightly precedes the db balance update.
-  await new Promise(r => setTimeout(r, 500));
-
-  let endingBalance = startingBalance;
-  try {
-    const finalBal = await connection.send({ balance: 1 });
-    if (finalBal?.balance?.balance) {
-      endingBalance = finalBal.balance.balance;
-    }
-  } catch (e) { }
+  // 5) Immediate Feedback (Potential Payout)
+  // We do not wait for the contract to close.
+  // We assume potential profit for the popup display as requested.
 
   // Construct metadata
-  // Use the final contract result for profit if available, as it's the source of truth
   const buyInfo = buyResp.buy || {};
   const stakeAmount = Number(price) || 0;
   const buyPrice = Number(buyInfo.buy_price || askPrice || 0);
 
-  let profit = 0;
-  let payout = 0;
+  let payout = Number(buyInfo.payout || 0);
+  let profit = payout - stakeAmount; // Potential profit
 
-  if (contractResult) {
-    profit = Number(contractResult.profit || 0);
-    payout = Number(contractResult.payout || 0);
-    // If profit is negative, it's a loss.
-  } else {
-    // Fallback
-    if (startingBalance != null && endingBalance != null) {
-      profit = endingBalance - startingBalance;
-    }
-    payout = stakeAmount + profit;
-  }
+  // Construct metadata for consumers
+  buyResp._meta = {
+    stakeAmount,
+    buyPrice,
+    payout,
+    profit,
+    startingBalance: null,
+    endingBalance: null
+  };
 
   // Double check profit against balance if available
   // (Optional, but contractResult.profit is usually reliable)
@@ -352,9 +314,11 @@ function showPopup(title, msg, timeout = 5000) {
 function showTradeResultPopup(type, stake, buyPrice, payout, profit, balance) {
   let resultHtml = '';
   if (profit > 0) {
-    resultHtml = `Result: <span class="profit">+ $${profit.toFixed(2)}</span>`;
+    resultHtml = `Potential Profit: <span class="profit">+ $${profit.toFixed(2)}</span>`;
   } else {
-    resultHtml = `Result: <span class="loss">- $${Math.abs(profit).toFixed(2)}</span>`;
+    // Should not happen with potential calculation unless payout < price (unlikely for binary options, usually 0 or high)
+    // But if it is a loss calculation
+    resultHtml = `Potential Payout: <span class="amount">$${payout.toFixed(2)}</span>`;
   }
 
   const details = `
