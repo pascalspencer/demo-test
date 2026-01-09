@@ -242,7 +242,7 @@ async function buyContract(symbol, tradeType, duration, price, prediction = null
 
   // 5) Calculate Result (Profit/Loss) & Balance Update
   // Wait a moment for balance update to propagate
-  await new Promise(r => setTimeout(r, 1000));
+  await new Promise(r => setTimeout(r, 2500));
 
   let endingBalance = null;
   try {
