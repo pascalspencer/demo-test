@@ -1,0 +1,97 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <title>Zodiac Algo-trade</title>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="description" content=" Deriv Application Algorithm for forex trade.">
+    <meta name="keywords" content="Forex, Trade, Crypto">
+    <meta name="author" content="Spencer Developments">
+    <meta name="google-site-verification" content="OUMjSX9l2SpBAZ02IixLsyW8LEyUdElc5D6SF3EtoKM" />
+    <!-- Google tag (gtag.js) -->
+    <script async src="https://www.googletagmanager.com/gtag/js?id=G-6LHJFKCQKP"></script>
+    <script>
+      window.dataLayer = window.dataLayer || [];
+      function gtag(){dataLayer.push(arguments);}
+      gtag('js', new Date());
+  
+      gtag('config', 'G-XXXX', { cookie_domain: 'auto' });
+
+    </script>
+    <script>
+        document.addEventListener("DOMContentLoaded", () => {
+            const params = new URLSearchParams(window.location.search);
+            const token1 = params.get("token1");
+            const token2 = params.get("token2");
+
+            if (token1 && token2) {
+                localStorage.setItem("token1", token1);
+                localStorage.setItem("token2", token2);
+                console.log("Saved tokens from URL:", token1, token2);
+            } else {
+                console.warn("No userToken found in URL.");
+            }
+        });
+    </script>
+  
+    <link rel="preconnect" href="https://fonts.gstatic.com">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/5.15.4/css/all.min.css">
+    <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@300;500;600&display=swap" rel="stylesheet">
+    <link href="css/font-awesome.min.css" rel="stylesheet" />
+    <link rel="icon" href="favicon.png" type="image/x-icon">
+    <link rel="stylesheet" href="css/sign-in.css">
+</head>
+<body>
+    <div class="background">
+        <div class="shape"></div>
+        <div class="shape"></div>
+    </div>
+    <form id="login-form" action="/trade" method="POST">
+        <h3>Login Here</h3>
+        <div class="contact_link_box">
+            <p>Select Deriv Account</p>
+            <p>
+              <i class="fa fa-whatsapp" aria-hidden="true"></i>
+              <span>Whatsapp +254757384487</span>
+            </p>
+            <p>
+              <i class="fa fa-envelope" aria-hidden="true"></i>
+              <span>spencerinc.dev@gmail.com</span>
+            </p>
+        </div>
+        <label for="accountType">Account Type</label>
+        <select id="accountType" name="accountType" required>
+            <option value="real">Demo</option>
+            <option value="demo">Real</option>
+        </select>
+        <button type="submit" id="login-button">Continue</button>
+    </form>
+</body>
+<footer>
+    <section class="footer_section">
+        <div class="container">
+            <p>&copy; <span id="displayYear"></span> All Rights Reserved By
+            <a href="https://pascalspencer.github.io" target="_blank">Spencerinc</a>
+            </p>
+        </div>
+    </section>
+    <script type="module" src="js/custom.mjs"></script>
+    <script type="module" src="js/buyContract.mjs"></script>
+    <script type="module" src="js/popupMessages.mjs"></script>
+    <script>
+        document.addEventListener('contextmenu', function(event) {
+            event.preventDefault();
+        });
+
+        document.addEventListener('keydown', function(event) {
+            if (event.key === 'F12' || 
+                (event.ctrlKey && event.shiftKey && (event.key === 'I' || event.key === 'J')) ||
+                (event.ctrlKey && event.key === 'U')) {
+                event.preventDefault();
+            }
+        });
+
+      </script>
+    
+</footer>
+</html>

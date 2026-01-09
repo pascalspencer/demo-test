@@ -1,0 +1,211 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <link rel="icon" href="favicon.png" type="image/x-icon">
+  <link rel="stylesheet" href="css/trade.css">
+  <title>Zodiac Algo-trade</title>
+
+  <style>
+    /* Toggle Switch Styling */
+    .toggle-container {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      margin-bottom: 1rem;
+      gap: 10px;
+    }
+    .toggle-label {
+      font-weight: bold;
+      font-size: 1rem;
+    }
+    .switch {
+      position: relative;
+      display: inline-block;
+      width: 60px;
+      height: 30px;
+    }
+    .switch input {
+      opacity: 0;
+      width: 0;
+      height: 0;
+    }
+    .slider {
+      position: absolute;
+      cursor: pointer;
+      top: 0;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      background-color: #ccc;
+      transition: 0.4s;
+      border-radius: 30px;
+    }
+    .slider:before {
+      position: absolute;
+      content: "";
+      height: 22px;
+      width: 22px;
+      left: 4px;
+      bottom: 4px;
+      background-color: white;
+      transition: 0.4s;
+      border-radius: 50%;
+    }
+    input:checked + .slider {
+      background-color: #4CAF50;
+    }
+    input:checked + .slider:before {
+      transform: translateX(30px);
+    }
+    #mode-display {
+      font-size: 1.1rem;
+      color: #333;
+      text-align: center;
+      margin-bottom: 1rem;
+    }
+  </style>
+</head>
+<body>
+  <div id="auto-analysis"></div>
+
+  <form id="trade-form" aria-labelledby="form-heading">
+    <h1 id="form-heading">Zodiac Algo-trade</h1>
+
+    <!-- Top Toggle Only -->
+    <div class="toggle-container">
+      <span class="toggle-label">Manual</span>
+      <label class="switch">
+        <input type="checkbox" id="mode-toggle">
+        <span class="slider"></span>
+      </label>
+      <span class="toggle-label">Automated</span>
+    </div>
+    <div id="mode-display">Current Mode: <strong>Manual</strong></div>
+    
+    <!-- Market Dropdown -->
+    <label for="market">Market:</label>
+    <select id="market" name="market" required>
+      <option value="">Select Market</option>
+      <option value="forex">Forex</option>
+      <option value="indices">Indices</option>
+      <option value="commodities">Commodities</option>
+      <option value="cryptocurrency">Crypto</option>
+      <option value="synthetic_index">Synthetic Index</option>
+    </select>
+
+    <!-- Submarket Dropdown -->
+    <label for="submarket">Submarket:</label>
+    <select id="submarket" name="submarket" disabled>
+      <option value="">Select Submarket</option>
+    </select>
+
+    <!-- Contract Type Dropdown -->
+    <label for="contract_type">Trade Type:</label>
+    <select id="contract_type" name="contract_type" required>
+      <option value="">Select Trade</option>
+      <option value="up_and_down">Up and Down</option>
+      <option value="digits">Digits</option>
+    </select>
+
+    <!-- Sentiment Dropdown -->
+    <label for="sentiment">Sentiment:</label>
+    <select id="sentiment" name="sentiment" required>
+      <option value="">Select Sentiment</option>
+    </select>
+
+    <!-- Digits Input -->
+    <div id="digit-value" style="display: none;">
+      <label for="input-value">Digits:</label>
+      <select name="input-value" id="input-value">
+        <option value="">Select Digit</option>
+        <option value="0">0</option>
+        <option value="1">1</option>
+        <option value="2">2</option>
+        <option value="3">3</option>
+        <option value="4">4</option>
+        <option value="5">5</option>
+        <option value="6">6</option>
+        <option value="7">7</option>
+        <option value="8">8</option>
+        <option value="9">9</option>
+      </select>
+    </div>
+
+    <label for="price">Minimum: min 0.35</label>
+    <input id="price" name="price" type="number" step="0.01" min="0.35" required>
+
+    <!-- Submit Button -->
+    <input type="submit" value="Run">
+  </form>
+
+  <!-- Loading Spinner -->
+  <div class="loadingio-spinner-gear-5fyuz6nbepy" id="spinner-container" role="status" aria-live="polite">
+    <div class="ldio-s69gk832n0l">
+      <div>
+        <div></div><div></div><div></div><div></div><div></div><div></div>
+      </div>
+    </div>
+  </div>
+
+  <div id="loading-message" aria-live="polite"></div>
+  <div id="results-container"></div>
+  </div>
+
+  <script type="module" src="/js/buyContract.mjs"></script>
+  <script type="module" src="/js/formData.mjs"></script>
+  <script type="module" src="/js/smart-ui.mjs"></script>
+  <script type="module" src="/js/smart-over-under.mjs"></script>
+  <script type="module" src="/js/even-odd.mjs"></script>
+
+  <script type="module">
+    // Auto-populate Market → Submarket Dropdowns
+    document.addEventListener("DOMContentLoaded", async () => {
+      let instruments = {};
+
+      // Fetch from backend
+      try {
+        const res = await fetch("/api/data");
+        instruments = await res.json();
+        console.log("Loaded instruments:", instruments);
+      } catch (error) {
+        console.error("Error loading instruments:", error);
+        return;
+      }
+
+    });
+  </script>
+
+
+  <script type="module">
+    import { setAutomationMode, getAutomationMode } from "/js/buyContract.mjs";
+
+    document.addEventListener('contextmenu', e => e.preventDefault());
+    document.addEventListener('keydown', e => {
+      if (e.key === 'F12' || 
+          (e.ctrlKey && e.shiftKey && ['I', 'J'].includes(e.key)) ||
+          (e.ctrlKey && e.key === 'U')) e.preventDefault();
+    });
+
+    document.addEventListener("DOMContentLoaded", () => {
+    const toggle = document.getElementById("mode-toggle");
+    const modeDisplay = document.getElementById("mode-display");
+
+    // Load saved mode from localStorage
+    const savedMode = localStorage.getItem("zodiac_mode") === "true";
+    toggle.checked = savedMode;
+    setAutomationMode(savedMode);
+    modeDisplay.innerHTML = `Current Mode: <strong>${savedMode ? "Automated" : "Manual"}</strong>`;
+
+    // Handle toggle change
+    toggle.addEventListener("change", () => {
+      const isAutomated = toggle.checked;
+      localStorage.setItem("zodiac_mode", isAutomated);
+      modeDisplay.innerHTML = `Current Mode: <strong>${isAutomated ? "Automated" : "Manual"}</strong>`;
+      setAutomationMode(isAutomated);
+    });
+  });
+  </script>
+</body>
+</html>
