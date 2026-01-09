@@ -11,7 +11,7 @@ const DERIV_FREQUENCY_MIN = 8.0;
 const DERIV_FREQUENCY_RANGE = 5.0;
 
 function determineBaseChances(selectedNumber) {
-  const totalNumbers = numbers.length; 
+  const totalNumbers = numbers.length;
   const chance = 100 / totalNumbers;
 
   let higherChance, lowerChance;
@@ -27,7 +27,7 @@ function applyRandomDeviation(higherChance, lowerChance, selectedNumber) {
     selectedNumber > Math.min(...numbers) &&
     selectedNumber < Math.max(...numbers)
   ) {
-    const increaseAmount = Math.random() * 10; 
+    const increaseAmount = Math.random() * 10;
     higherChance = Math.min(higherChance + increaseAmount, MAX_PERCENTAGE);
     lowerChance = Math.max(lowerChance - increaseAmount, 0);
   }
@@ -64,7 +64,7 @@ function determinePercentage(selectedNumber) {
     Math.random() * DERIV_FREQUENCY_RANGE + DERIV_FREQUENCY_MIN;
 
 
-    const differs = higherChance * randomFrequency;
+  const differs = higherChance * randomFrequency;
   let matches = lowerChance * randomFrequency;
 
 
@@ -73,10 +73,10 @@ function determinePercentage(selectedNumber) {
     selectedNumber > Math.min(...numbers) &&
     selectedNumber < Math.max(...numbers)
   ) {
-    matches *= 2; 
+    matches *= 2;
   } else {
     if (Math.random() >= MATCH_CHANCE_FREQUENCY) {
-      matches *= 0.1; 
+      matches *= 0.1;
     }
   }
 
@@ -91,23 +91,23 @@ function determinePercentage(selectedNumber) {
 
 
 function determineChances(selectedNumber) {
-    const { matches, differs } = determinePercentage(selectedNumber);
+  const { matches, differs } = determinePercentage(selectedNumber);
 
-    const totalChance = matches + differs;
+  const totalChance = matches + differs;
 
-    const matchesChance = Math.floor((matches / totalChance) * 97);
-    const differsChance = Math.floor((differs / totalChance) * 97);
+  let matchesChance = Math.floor((matches / totalChance) * 97);
+  const differsChance = Math.floor((differs / totalChance) * 97);
 
 
-    if (matchesChance === differsChance) {
-      matchesChance += 1;
-      if (matchesChance > 97) {
-        matchesChance = 97;
-      }
+  if (matchesChance === differsChance) {
+    matchesChance += 1;
+    if (matchesChance > 97) {
+      matchesChance = 97;
     }
-
-    return { matchesChance, differsChance };
   }
+
+  return { matchesChance, differsChance };
+}
 
 
 export { determineChances };
