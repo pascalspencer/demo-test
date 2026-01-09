@@ -12,7 +12,7 @@ class DerivConnection {
     this.ws = null;
     this.reqId = 1;
     this.pendingRequests = new Map(); // req_id -> {resolve, reject, timeout}
-    this.subscriptions = new Map();   // req_id -> callback
+    this.subscriptions = new Map();   // req_id -> callback 
     this.bufferedRequests = [];       // Requests queued while offline
     this.isConnected = false;
     this.reconnectAttempts = 0;
