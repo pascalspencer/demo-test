@@ -254,6 +254,7 @@ async function buyContract(symbol, tradeType, duration, price, prediction = null
 
   let payout = Number(buyInfo.payout || 0);
   let profit = payout - stakeAmount; // Potential profit
+  let endingBalance = null;
 
   // Construct metadata for consumers
   buyResp._meta = {
