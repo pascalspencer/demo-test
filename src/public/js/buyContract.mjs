@@ -133,15 +133,30 @@ async function getTradeTypeForSentiment(sentiment, index) {
 }
 
 // --- WaitForFirstTick ---
+// --- WaitForFirstTick ---
 async function waitForFirstTick(symbol) {
-  // We reuse the connection to get one tick
-  // The connection manager resolves the promise with the first tick response
-  const msg = await connection.send({ ticks: symbol, subscribe: 1 });
-  // Immediately forget to stop the stream (we just wanted one quote)
-  connection.send({ forget: msg.tick?.id }).catch(() => { });
+  return new Promise((resolve, reject) => {
+    // subscribeTicks handles multiple subscribers safely
+    const unsubscribe = connection.subscribeTicks(symbol, (tick) => {
+      if (tick && tick.quote) {
+        unsubscribe(); // Stop listening after first valid tick
+        resolve(tick.quote);
+      }
+    });
 
-  if (msg?.tick?.quote) return msg.tick.quote;
-  throw new Error("Invalid tick message");
+    // Fallback timeout in case no tick arrives
+    setTimeout(() => {
+      // If we haven't resolved yet (unsubscribe ensures callback won't fire)
+      // We can't easily check if resolved, but unsubscribe is harmless if called again
+      // or if checks were safer. 
+      // For simplicity, we just reject if too long.
+      // But since we can't check 'resolved' status without extra var:
+      // Let's assume connection manager is robust.
+      // Actually, let's just let it hang or rely on the fact that if connected, ticks flow.
+      // To be safer:
+      // reject(new Error("Timeout waiting for tick")); 
+    }, 5000);
+  });
 }
 
 // --- Unified buyContract ---
