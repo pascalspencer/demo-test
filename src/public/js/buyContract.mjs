@@ -258,12 +258,13 @@ async function buyContract(symbol, tradeType, duration, price, prediction = null
     return { error: buyResp.error };
   }
 
-  console.log("🎉 Trade executed, waiting for result...", propId);
+  console.log("🎉 Trade executed, waiting for result...", buyResp.buy.contract_id);
 
   // 5) Wait for Contract Result (Accurate Profit/Loss)
   let contractResult;
   try {
-    contractResult = await waitForContractResult(propId);
+    const contractId = Number(buyResp.buy.contract_id);
+    contractResult = await waitForContractResult(contractId);
   } catch (e) {
     console.error("Error waiting for contract:", e);
   }
