@@ -1,13 +1,329 @@
 import { buyContract } from "./buyContract.mjs";
 import { getCurrentToken } from './popupMessages.mjs';
+import connection from './derivConnection.mjs';
 
 let running = false;
 let ticksSeen = 0;
 let tradeLock = false;
-let tickWs = null;
+let unsubscribeTicks = null; // function to stop tick subscription
 
 let overDigit, underDigit, tickCount, stakeInput;
 let singleToggle, bulkToggle, resultsBox;
+
+document.addEventListener("DOMContentLoaded", () => {
+  // UI Injection
+  document.body.insertAdjacentHTML("beforeend", `
+  <div id="smart-over-under" style="display:none">
+    <div class="smart-card">
+      <div class="smart-header">
+        <h2 class="smart-title">Smart Over / Under</h2>
+        <p class="smart-sub">Automated digit strategy</p>
+      </div>
+
+      <div class="smart-form">
+        <div class="row two-cols">
+          <div class="field">
+            <label for="over-digit">Over</label>
+            <select id="over-digit"></select>
+          </div>
+
+          <div class="field">
+            <label for="under-digit">Under</label>
+            <select id="under-digit"></select>
+          </div>
+        </div>
+
+        <div class="field">
+          <label for="tick-count">Number of ticks</label>
+          <input type="number" id="tick-count" min="1" value="5">
+        </div>
+
+        <div class="toggle-container">
+          <label class="small-toggle">
+            <span>Single</span>
+            <input type="checkbox" id="single-toggle" checked>
+          </label>
+          <label class="small-toggle">
+            <span>Bulk</span>
+            <input type="checkbox" id="bulk-toggle">
+          </label>
+        </div>
+
+        <div class="stake-row">
+          <div class="field stake-field">
+            <label for="stake">(Minimum 0.35)</label>
+            <input type="number" id="stake" min="0.35" step="0.01" value="0.35">
+          </div>
+
+          <div class="smart-buttons">
+            <button id="run-smart">RUN</button>
+            <button id="stop-smart">STOP</button>
+          </div>
+        </div>
+
+<div id="smart-results" class="smart-results"></div>
+      </div>
+    </div>
+  </div>
+`);
+
+
+  overDigit = document.getElementById("over-digit");
+  underDigit = document.getElementById("under-digit");
+  tickCount = document.getElementById("tick-count");
+  stakeInput = document.getElementById("stake");
+  singleToggle = document.getElementById("single-toggle");
+  bulkToggle = document.getElementById("bulk-toggle");
+  resultsBox = document.getElementById("smart-results");
+
+  for (let i = 0; i <= 9; i++) {
+    overDigit.innerHTML += `<option value="${i}">${i}</option>`;
+    underDigit.innerHTML += `<option value="${i}">${i}</option>`;
+  }
+
+  function updateToggles() {
+    if (singleToggle.checked) {
+      bulkToggle.checked = false;
+      bulkToggle.disabled = true;
+    } else {
+      bulkToggle.disabled = false;
+    }
+
+    if (bulkToggle.checked) {
+      singleToggle.checked = false;
+      singleToggle.disabled = true;
+    } else {
+      singleToggle.disabled = false;
+    }
+  }
+
+  singleToggle.addEventListener('change', updateToggles);
+  bulkToggle.addEventListener('change', updateToggles);
+  updateToggles();
+
+  const marketEl = document.getElementById("market");
+  const submarketEl = document.getElementById("submarket");
+  const originalPos = {
+    market: marketEl ? { parent: marketEl.parentNode, next: marketEl.nextSibling } : null,
+    submarket: submarketEl ? { parent: submarketEl.parentNode, next: submarketEl.nextSibling } : null,
+  };
+
+  const smartContainer = document.getElementById("smart-over-under");
+  let smartHeadingEl = null;
+
+  function showSmartMode() {
+    document.body.classList.add('smart-mode');
+    if (marketEl && marketEl.parentNode !== smartContainer) {
+      smartContainer.insertBefore(marketEl, smartContainer.firstChild);
+    }
+    if (submarketEl && submarketEl.parentNode !== smartContainer) {
+      smartContainer.insertBefore(submarketEl, marketEl && marketEl.parentNode === smartContainer ? marketEl.nextSibling : smartContainer.firstChild);
+    }
+    smartContainer.classList.add('visible');
+  }
+
+  function hideSmartMode() {
+    document.body.classList.remove('smart-mode');
+    if (originalPos.market && marketEl) {
+      originalPos.market.parent.insertBefore(marketEl, originalPos.market.next);
+    }
+    if (originalPos.submarket && submarketEl) {
+      originalPos.submarket.parent.insertBefore(submarketEl, originalPos.submarket.next);
+    }
+    smartContainer.classList.remove('visible');
+  }
+
+  let lastVisible = window.getComputedStyle(smartContainer).display !== 'none';
+  const visibilityPoll = setInterval(() => {
+    const visible = window.getComputedStyle(smartContainer).display !== 'none';
+    if (visible === lastVisible) return;
+    lastVisible = visible;
+    if (visible) showSmartMode(); else hideSmartMode();
+  }, 250);
+
+  window.addEventListener('beforeunload', () => clearInterval(visibilityPoll));
+
+  document.getElementById("run-smart").onclick = runSmart;
+  document.getElementById("stop-smart").onclick = stopSmart;
+});
+
+function popup(msg, details = null, timeout = 2000) {
+  // reusing existing popup logic simply
+  try {
+    const overlay = document.createElement('div');
+    overlay.className = 'trade-popup-overlay';
+    const popup = document.createElement('div');
+    popup.className = 'trade-popup';
+    const title = document.createElement('h3');
+    title.textContent = msg;
+    popup.appendChild(title);
+    if (details) {
+      const p = document.createElement('p');
+      p.innerHTML = details;
+      popup.appendChild(p);
+    }
+    const closeBtn = document.createElement('a');
+    closeBtn.className = 'close-btn';
+    closeBtn.href = '#';
+    closeBtn.textContent = 'Close';
+    closeBtn.addEventListener('click', (ev) => { ev.preventDefault(); try { overlay.remove(); } catch (e) { } });
+    popup.appendChild(closeBtn);
+    overlay.appendChild(popup);
+    try { document.body.appendChild(overlay); } catch (e) { }
+    if (timeout > 0) setTimeout(() => { try { overlay.remove(); } catch (e) { } }, timeout);
+  } catch (e) { }
+}
+
+async function runSmart() {
+  if (running) return;
+  running = true;
+  ticksSeen = 0;
+  tradeLock = false;
+  resultsBox.innerHTML = "";
+
+  popup("Checking Entry...");
+
+  const symbol = document.getElementById("submarket")?.value || "R_100";
+
+  if (bulkToggle.checked) {
+    await runBulkOnce(symbol);
+    running = false;
+    return;
+  }
+
+  if (singleToggle.checked) {
+    await runSingleSequential(symbol);
+    running = false;
+    return;
+  }
+}
+
+// Sequential buys driven by ticks
+async function runSingleSequential(symbol) {
+  ticksSeen = 0;
+  return new Promise((resolve) => {
+    // Subscribe using the connection manager
+    unsubscribeTicks = connection.subscribeTicks(symbol, (tick) => {
+      if (!running) {
+        if (unsubscribeTicks) unsubscribeTicks();
+        resolve();
+        return;
+      }
+
+      const quote = tick.quote;
+      const digit = Number(String(quote).slice(-1));
+
+      if (tradeLock) return;
+
+      if (digit < Number(overDigit.value)) {
+        tradeLock = true;
+        executeTrade(symbol, "DIGITOVER", overDigit.value, quote).finally(() => {
+          tradeLock = false;
+          ticksSeen++;
+        });
+      } else if (digit > Number(underDigit.value)) {
+        tradeLock = true;
+        executeTrade(symbol, "DIGITUNDER", underDigit.value, quote).finally(() => {
+          tradeLock = false;
+          ticksSeen++;
+        });
+      }
+
+      if (ticksSeen >= Number(tickCount.value)) {
+        finishSmart();
+        resolve();
+      }
+    });
+
+    if (!unsubscribeTicks) {
+      // safety if connection failed immediately
+      running = false;
+      resolve();
+    }
+  });
+}
+
+// Bulk mode
+async function runBulkOnce(symbol) {
+  return new Promise((resolve) => {
+    ticksSeen = 0;
+
+    unsubscribeTicks = connection.subscribeTicks(symbol, async (tick) => {
+      if (!running) {
+        if (unsubscribeTicks) unsubscribeTicks();
+        resolve();
+        return;
+      }
+
+      const quote = tick.quote;
+      const digit = Number(String(quote).slice(-1));
+
+      if (tradeLock) return;
+
+      let tradeType = null;
+      let barrier = 0;
+
+      if (digit < Number(overDigit.value)) {
+        tradeType = "DIGITOVER";
+        barrier = overDigit.value;
+      } else if (digit > Number(underDigit.value)) {
+        tradeType = "DIGITUNDER";
+        barrier = underDigit.value;
+      }
+
+      if (!tradeType) return;
+
+      tradeLock = true;
+
+      // Execute buys
+      const n = Math.max(1, Number(tickCount.value) || 1);
+      const stake = stakeInput.value;
+
+      // We use the shared buyContract function which now queues correctly via connection manager
+      const buys = Array.from({ length: n }, () => buyContract(symbol, tradeType, 1, stake, barrier, quote, true));
+
+      let results = [];
+      try {
+        results = await Promise.allSettled(buys);
+      } catch (e) { }
+
+      let success = 0, failed = 0;
+      results.forEach(r => {
+        if (r.status === 'fulfilled' && !(r.value && r.value.error)) success++; else failed++;
+      });
+
+      const details = `Executed ${n} buys: <strong>${success} succeeded</strong>, <strong>${failed} failed</strong>`;
+      popup('Bulk trade executed', details, 6000);
+
+      // Stop after one bulk execution
+      finishSmart();
+      resolve();
+    });
+  });
+}
+
+// Removed ad-hoc checkTick since we stream now.
+
+async function executeTrade(symbol, type, barrier, liveQuote) {
+  const stake = stakeInput.value;
+  // We delegate completely to buyContract.mjs which now uses the robust connection
+  await buyContract(symbol, type, 1, stake, barrier, liveQuote, true);
+}
+
+
+function stopSmart() {
+  finishSmart();
+  popup("Stopped");
+}
+
+function finishSmart() {
+  running = false;
+  tradeLock = false;
+  if (unsubscribeTicks) {
+    unsubscribeTicks();
+    unsubscribeTicks = null;
+  }
+}
 
 
 
@@ -73,11 +389,11 @@ document.addEventListener("DOMContentLoaded", () => {
   underDigit = document.getElementById("under-digit");
   tickCount = document.getElementById("tick-count");
   stakeInput = document.getElementById("stake");
-singleToggle = document.getElementById("single-toggle");
+  singleToggle = document.getElementById("single-toggle");
   bulkToggle = document.getElementById("bulk-toggle");
   resultsBox = document.getElementById("smart-results");
 
-  
+
 
   for (let i = 0; i <= 9; i++) {
     overDigit.innerHTML += `<option value="${i}">${i}</option>`;
@@ -103,7 +419,7 @@ singleToggle = document.getElementById("single-toggle");
 
   singleToggle.addEventListener('change', updateToggles);
   bulkToggle.addEventListener('change', updateToggles);
-// ensure initial state
+  // ensure initial state
   updateToggles();
 
   // Preserve references to original market/submarket parents so we can
@@ -200,13 +516,13 @@ function popup(msg, details = null, timeout = 2000) {
     closeBtn.className = 'close-btn';
     closeBtn.href = '#';
     closeBtn.textContent = 'Close';
-    closeBtn.addEventListener('click', (ev) => { ev.preventDefault(); try { overlay.remove(); } catch (e) {} });
+    closeBtn.addEventListener('click', (ev) => { ev.preventDefault(); try { overlay.remove(); } catch (e) { } });
     popup.appendChild(closeBtn);
 
     overlay.appendChild(popup);
     try { document.body.appendChild(overlay); } catch (e) { console.warn('Could not show popup:', e); }
 
-    if (timeout > 0) setTimeout(() => { try { overlay.remove(); } catch (e) {} }, timeout);
+    if (timeout > 0) setTimeout(() => { try { overlay.remove(); } catch (e) { } }, timeout);
   } catch (e) {
     console.warn('Popup render failed:', e);
   }
@@ -256,12 +572,12 @@ async function runSingleSequential(symbol) {
     }
 
     tickWs.onopen = () => {
-      try { tickWs.send(JSON.stringify({ ticks: symbol, subscribe: 1 })); } catch (e) {}
+      try { tickWs.send(JSON.stringify({ ticks: symbol, subscribe: 1 })); } catch (e) { }
     };
 
     tickWs.onmessage = async (e) => {
       if (!running) {
-        try { tickWs.close(); } catch (e) {}
+        try { tickWs.close(); } catch (e) { }
         resolve();
         return;
       }
@@ -276,7 +592,7 @@ async function runSingleSequential(symbol) {
       // if a trade is already in progress, skip this tick
       if (tradeLock) return;
 
-if (digit < Number(overDigit.value)) {
+      if (digit < Number(overDigit.value)) {
         tradeLock = true;
         // Execute trade without waiting for faster execution
         executeTrade(symbol, "DIGITOVER", overDigit.value, quote).finally(() => {
@@ -293,13 +609,13 @@ if (digit < Number(overDigit.value)) {
       }
 
       if (ticksSeen >= Number(tickCount.value) || !running) {
-        try { tickWs.close(); } catch (e) {}
+        try { tickWs.close(); } catch (e) { }
         resolve();
       }
     };
 
     tickWs.onerror = () => {
-      try { tickWs.close(); } catch (e) {}
+      try { tickWs.close(); } catch (e) { }
       resolve();
     };
   });
@@ -318,12 +634,12 @@ async function runBulkOnce(symbol) {
     }
 
     tickWs.onopen = () => {
-      try { tickWs.send(JSON.stringify({ ticks: symbol, subscribe: 1 })); } catch (e) {}
+      try { tickWs.send(JSON.stringify({ ticks: symbol, subscribe: 1 })); } catch (e) { }
     };
 
     tickWs.onmessage = async (e) => {
       if (!running) {
-        try { tickWs.close(); } catch (e) {}
+        try { tickWs.close(); } catch (e) { }
         resolve();
         return;
       }
@@ -372,12 +688,12 @@ async function runBulkOnce(symbol) {
       popup('Bulk trade executed', details, 6000);
       tradeLock = false;
 
-      try { tickWs.close(); } catch (e) {}
+      try { tickWs.close(); } catch (e) { }
       resolve();
     };
 
     tickWs.onerror = () => {
-      try { tickWs.close(); } catch (e) {}
+      try { tickWs.close(); } catch (e) { }
       resolve();
     };
   });
@@ -434,7 +750,7 @@ async function executeTrade(symbol, type = "DIGITOVER", barrier = 0, liveQuote =
       let resolved = false;
       let ws;
       const timer = setTimeout(() => {
-        try { if (ws) ws.close(); } catch (e) {}
+        try { if (ws) ws.close(); } catch (e) { }
         if (!resolved) { resolved = true; resolve(null); }
       }, timeoutMs);
 
@@ -448,9 +764,9 @@ async function executeTrade(symbol, type = "DIGITOVER", barrier = 0, liveQuote =
       ws.onopen = () => {
         const token = getCurrentToken();
         if (token) {
-          try { ws.send(JSON.stringify({ authorize: token })); } catch (e) {}
+          try { ws.send(JSON.stringify({ authorize: token })); } catch (e) { }
         }
-        try { ws.send(JSON.stringify({ balance: 1 })); } catch (e) {}
+        try { ws.send(JSON.stringify({ balance: 1 })); } catch (e) { }
       };
 
       ws.onmessage = (ev) => {
@@ -459,7 +775,7 @@ async function executeTrade(symbol, type = "DIGITOVER", barrier = 0, liveQuote =
         try { msg = JSON.parse(ev.data); } catch (e) { return; }
         if (msg && (msg.balance !== undefined || msg.account_balance !== undefined)) {
           clearTimeout(timer);
-          try { ws.close(); } catch (e) {}
+          try { ws.close(); } catch (e) { }
           resolved = true;
           resolve(msg);
         }
@@ -468,7 +784,7 @@ async function executeTrade(symbol, type = "DIGITOVER", barrier = 0, liveQuote =
       ws.onerror = () => {
         if (!resolved) {
           clearTimeout(timer);
-          try { ws.close(); } catch (e) {}
+          try { ws.close(); } catch (e) { }
           resolved = true;
           resolve(null);
         }
@@ -509,7 +825,7 @@ async function executeTrade(symbol, type = "DIGITOVER", barrier = 0, liveQuote =
       const n = Number(v);
       return Number.isNaN(n) ? null : n;
     };
-    
+
 
     // Prefer metadata computed inside buyContract where possible (ensures same delays/reads)
     const meta = resp && resp._meta ? resp._meta : null;
@@ -521,7 +837,7 @@ async function executeTrade(symbol, type = "DIGITOVER", barrier = 0, liveQuote =
 
       // If buyContract didn't supply a final endingBalance, try to fetch one now
       let endingBalanceLocal = (meta.endingBalance !== null && typeof meta.endingBalance !== 'undefined') ? meta.endingBalance : null;
-      
+
       if (endingBalanceLocal !== null) {
         const refStart = (meta.startingBalance !== null && typeof meta.startingBalance !== 'undefined') ? meta.startingBalance : startingBalance;
         if (refStart !== null) profit = +(endingBalanceLocal - refStart).toFixed(2);
@@ -629,7 +945,7 @@ function stopSmart() {
   running = false;
   tradeLock = false;
   if (tickWs) {
-    try { tickWs.close(); } catch (e) {}
+    try { tickWs.close(); } catch (e) { }
     tickWs = null;
   }
   popup("Stopped");
@@ -639,25 +955,25 @@ function stopSmart() {
 
 function updateTickDisplay() {
   tickGridEO.innerHTML = '';
-  
+
   // Display last 50 ticks (or fewer if we don't have that many yet)
   const displayTicks = tickHistory.slice(-50);
-  
+
   displayTicks.forEach((tick, index) => {
     const tickEl = document.createElement('div');
     tickEl.className = 'tick-item';
     tickEl.textContent = tick;
-    
+
     // Color based on even/odd
     if (tick % 2 === 0) {
       tickEl.classList.add('even');
     } else {
       tickEl.classList.add('odd');
     }
-    
+
     tickGridEO.appendChild(tickEl);
   });
-  
+
   totalTicksEO.textContent = tickHistory.length;
 }
 
@@ -694,7 +1010,7 @@ async function runEvenOdd() {
 
   const tradeType = allEven ? "DIGITODD" : "DIGITEVEN";
   const pattern = allEven ? "Even" : "Odd";
-  
+
   evenOddResults.innerHTML = `Found 5 consecutive ${pattern} ticks<br>Placing ${numTrades} ${tradeType} trades...`;
 
   // Place the trades
@@ -703,12 +1019,12 @@ async function runEvenOdd() {
     try {
       const result = await buyContract(symbol, tradeType, 1, stake, null, null, true);
       trades.push(result);
-      
+
       // Update results display
       const success = trades.filter(t => !t.error).length;
       const failed = trades.filter(t => t.error).length;
       evenOddResults.innerHTML = `Placing ${tradeType} trades...<br>Completed: ${success + failed}/${numTrades}<br>Success: ${success}, Failed: ${failed}`;
-      
+
       // Small delay between trades
       await new Promise(resolve => setTimeout(resolve, 500));
     } catch (error) {
@@ -720,7 +1036,7 @@ async function runEvenOdd() {
   // Final results
   const success = trades.filter(t => !t.error).length;
   const failed = trades.filter(t => t.error).length;
-  
+
   evenOddResults.innerHTML = `
     <strong>Execution Complete</strong><br>
     Pattern: ${pattern} (5 consecutive)<br>
@@ -738,7 +1054,7 @@ async function runEvenOdd() {
 function stopEvenOdd() {
   runningEO = false;
   if (tickWsEO) {
-    try { tickWsEO.close(); } catch (e) {}
+    try { tickWsEO.close(); } catch (e) { }
     tickWsEO = null;
   }
   document.getElementById("run-even-odd").textContent = "RUN";
@@ -748,7 +1064,7 @@ function stopEvenOdd() {
 async function collectTicks(symbol, count = 50) {
   return new Promise((resolve) => {
     let collected = 0;
-    
+
     try {
       tickWsEO = new WebSocket("wss://ws.derivws.com/websockets/v3?app_id=61696");
     } catch (err) {
@@ -757,12 +1073,12 @@ async function collectTicks(symbol, count = 50) {
     }
 
     tickWsEO.onopen = () => {
-      try { tickWsEO.send(JSON.stringify({ ticks: symbol, subscribe: 1 })); } catch (e) {}
+      try { tickWsEO.send(JSON.stringify({ ticks: symbol, subscribe: 1 })); } catch (e) { }
     };
 
     tickWsEO.onmessage = (e) => {
       if (!runningEO && collected >= count) {
-        try { tickWsEO.close(); } catch (e) {}
+        try { tickWsEO.close(); } catch (e) { }
         resolve();
         return;
       }
@@ -776,14 +1092,14 @@ async function collectTicks(symbol, count = 50) {
         updateTickDisplay();
 
         if (collected >= count) {
-          try { tickWsEO.close(); } catch (e) {}
+          try { tickWsEO.close(); } catch (e) { }
           resolve();
         }
       }
     };
 
     tickWsEO.onerror = () => {
-      try { tickWsEO.close(); } catch (e) {}
+      try { tickWsEO.close(); } catch (e) { }
       resolve();
     };
   });
