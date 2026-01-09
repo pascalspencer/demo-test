@@ -11,6 +11,23 @@ let maxTradesPerSession = 100; // safety cap
 
 document.addEventListener("DOMContentLoaded", () => {
   // Create Even/Odd Panel
+  // Helper for tracking result locally
+  async function waitForContractResult(contractId) {
+    return new Promise((resolve, reject) => {
+      const unsubscribe = connection.subscribePOC(contractId, (poc) => {
+        if (poc.is_sold) {
+          unsubscribe();
+          clearTimeout(timeoutId);
+          resolve(poc);
+        }
+      });
+      const timeoutId = setTimeout(() => {
+        unsubscribe();
+        resolve(null);
+      }, 120000);
+    });
+  }
+
   document.body.insertAdjacentHTML("beforeend", `
     <div id="even-odd-panel" style="display: none;">
       <div class="smart-card">
@@ -210,8 +227,14 @@ async function checkForPatternAndTrade() {
 
   try {
     const result = await buyContract(symbol, tradeType, 1, stake, null, null, true);
-    const payout = Number(result?.buy?.payout || 0);
-    const win = payout > stake;
+    if (!result?.buy?.contract_id) throw new Error("No contract ID returned");
+
+    // Wait for actual result
+    const contractResult = await waitForContractResult(Number(result.buy.contract_id));
+
+    // Determine win based on actual profit
+    const profit = Number(contractResult?.profit || 0);
+    const win = profit > 0;
 
     completedTrades++;
 
