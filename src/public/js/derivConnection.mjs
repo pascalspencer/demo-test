@@ -20,6 +20,7 @@ class DerivConnection {
     this.pingInterval = null;
     this.tickSubscribers = new Map(); // symbol -> Set of callbacks
     this.activeTickStreams = new Map(); // symbol -> req_id
+    this.pocSubscribers = new Map(); // contract_id -> callback
 
     DerivConnection.instance = this;
     this.connect();
@@ -231,6 +232,25 @@ class DerivConnection {
           }
         }
       }
+    };
+  }
+
+  // Subscribe to Proposal Open Contract stream for a specific contract ID
+  subscribePOC(contractId, callback) {
+    this.pocSubscribers.set(contractId, callback);
+
+    // Send subscription request
+    this.send({ proposal_open_contract: 1, contract_id: contractId, subscribe: 1 })
+      .catch(e => console.warn('POC sub failed', e));
+
+    return () => {
+      this.pocSubscribers.delete(contractId);
+      // We don't strictly need to forget_all here if contracts are short-lived, 
+      // but good practice might be to send a forget. 
+      // For now, relies on server closing finished contracts or explicit forget if added.
+      // To be safe we could:
+      // this.send({ forget_all: 'proposal_open_contract' ... }) but that kills ALL.
+      // Better to just stop listening client side.
     };
   }
 }

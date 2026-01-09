@@ -132,6 +132,26 @@ async function getTradeTypeForSentiment(sentiment, index) {
   return null;
 }
 
+// --- Status Tracker ---
+async function waitForContractResult(contractId) {
+  return new Promise((resolve, reject) => {
+    const unsubscribe = connection.subscribePOC(contractId, (poc) => {
+      // Check if contract is sold
+      if (poc.is_sold) {
+        unsubscribe();
+        resolve(poc);
+      }
+    });
+
+    // Safety timeout (e.g. 2 minutes max trade duration)
+    setTimeout(() => {
+      // unsubscribe();
+      // resolve({ error: "Timeout waiting for contract result" });
+      // Let it run; connection manager handles network issues.
+    }, 120000);
+  });
+}
+
 // --- WaitForFirstTick ---
 // --- WaitForFirstTick ---
 async function waitForFirstTick(symbol) {
@@ -238,40 +258,50 @@ async function buyContract(symbol, tradeType, duration, price, prediction = null
     return { error: buyResp.error };
   }
 
-  console.log("🎉 Trade executed:", buyResp);
+  console.log("🎉 Trade executed, waiting for result...", propId);
 
-  // 5) Calculate Result (Profit/Loss) & Balance Update
-  // Wait a moment for balance update to propagate
-  let endingBalance = startingBalance;
-  // Poll for up to 10 seconds (20 attempts * 500ms)
-  for (let i = 0; i < 20; i++) {
-    await new Promise(r => setTimeout(r, 500));
-    try {
-      const finalBal = await connection.send({ balance: 1 });
-      const current = finalBal?.balance?.balance;
-
-      // If balance has changed from start, we found the update
-      if (current !== undefined && current !== startingBalance) {
-        endingBalance = current;
-        break;
-      }
-    } catch (e) { }
+  // 5) Wait for Contract Result (Accurate Profit/Loss)
+  let contractResult;
+  try {
+    contractResult = await waitForContractResult(propId);
+  } catch (e) {
+    console.error("Error waiting for contract:", e);
   }
 
-  // Construct metadata for consumers
+  // 6) Fetch Final Balance
+  // Now that contract is sold, balance should be updated.
+  // We add a small buffer just in case the 'sold' event slightly precedes the db balance update.
+  await new Promise(r => setTimeout(r, 500));
+
+  let endingBalance = null;
+  try {
+    const finalBal = await connection.send({ balance: 1 });
+    endingBalance = finalBal?.balance?.balance;
+  } catch (e) { }
+
+  // Construct metadata
+  // Use the final contract result for profit if available, as it's the source of truth
   const buyInfo = buyResp.buy || {};
   const stakeAmount = Number(price) || 0;
   const buyPrice = Number(buyInfo.buy_price || askPrice || 0);
-  const payout = Number(buyInfo.payout || 0);
 
   let profit = 0;
-  // Calculate profit
-  if (startingBalance != null && endingBalance != null) {
-    profit = endingBalance - startingBalance;
+  let payout = 0;
+
+  if (contractResult) {
+    profit = Number(contractResult.profit || 0);
+    payout = Number(contractResult.payout || 0);
+    // If profit is negative, it's a loss.
   } else {
-    // Fallback calculation
-    profit = payout - stakeAmount;
+    // Fallback
+    if (startingBalance != null && endingBalance != null) {
+      profit = endingBalance - startingBalance;
+    }
+    payout = stakeAmount + profit;
   }
+
+  // Double check profit against balance if available
+  // (Optional, but contractResult.profit is usually reliable)
 
   // Adjust profit/loss display logic
   // If we lost, profit is negative stake (roughly)
