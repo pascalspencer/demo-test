@@ -12,21 +12,7 @@ let maxTradesPerSession = 100; // safety cap
 document.addEventListener("DOMContentLoaded", () => {
   // Create Even/Odd Panel
   // Helper for tracking result locally
-  async function waitForContractResult(contractId) {
-    return new Promise((resolve, reject) => {
-      const unsubscribe = connection.subscribePOC(contractId, (poc) => {
-        if (poc.is_sold) {
-          unsubscribe();
-          clearTimeout(timeoutId);
-          resolve(poc);
-        }
-      });
-      const timeoutId = setTimeout(() => {
-        unsubscribe();
-        resolve(null);
-      }, 120000);
-    });
-  }
+
 
   document.body.insertAdjacentHTML("beforeend", `
     <div id="even-odd-panel" style="display: none;">
@@ -177,6 +163,22 @@ function restartTickStream() {
   setTimeout(() => startTickStream(), 1000);
 }
 
+
+async function waitForContractResult(contractId) {
+  return new Promise((resolve, reject) => {
+    const unsubscribe = connection.subscribePOC(contractId, (poc) => {
+      if (poc.is_sold) {
+        unsubscribe();
+        clearTimeout(timeoutId);
+        resolve(poc);
+      }
+    });
+    const timeoutId = setTimeout(() => {
+      unsubscribe();
+      resolve(null);
+    }, 120000);
+  });
+}
 
 async function runEvenOdd() {
   if (running) {
