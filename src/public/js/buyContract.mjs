@@ -242,13 +242,21 @@ async function buyContract(symbol, tradeType, duration, price, prediction = null
 
   // 5) Calculate Result (Profit/Loss) & Balance Update
   // Wait a moment for balance update to propagate
-  await new Promise(r => setTimeout(r, 2500));
+  let endingBalance = startingBalance;
+  // Poll for up to 10 seconds (20 attempts * 500ms)
+  for (let i = 0; i < 20; i++) {
+    await new Promise(r => setTimeout(r, 500));
+    try {
+      const finalBal = await connection.send({ balance: 1 });
+      const current = finalBal?.balance?.balance;
 
-  let endingBalance = null;
-  try {
-    const finalBal = await connection.send({ balance: 1 });
-    endingBalance = finalBal?.balance?.balance;
-  } catch (e) { }
+      // If balance has changed from start, we found the update
+      if (current !== undefined && current !== startingBalance) {
+        endingBalance = current;
+        break;
+      }
+    } catch (e) { }
+  }
 
   // Construct metadata for consumers
   const buyInfo = buyResp.buy || {};
