@@ -1,7 +1,7 @@
 import { getCurrentToken } from './popupMessages.mjs';
 
 // Note: DerivAPIBasic removed — sending raw JSON over WebSocket and handling responses by req_id.
-const derivAppID = 61696;
+const derivAppID = 120308;
 const connection = new WebSocket(`wss://ws.derivws.com/websockets/v3?app_id=${derivAppID}`);
 
 let api = null; // kept for compatibility checks in other codepaths

@@ -10,7 +10,7 @@ const DerivAPI = require("@deriv/deriv-api/dist/DerivAPI");
 
 
 const app = express();
-const app_id = 61696;
+const app_id = 120308;
 
 
 

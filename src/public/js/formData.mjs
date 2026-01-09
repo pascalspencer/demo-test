@@ -28,7 +28,7 @@ document.addEventListener("DOMContentLoaded", function () {
   let sentimentsData = {};
   let marketsData = {};
 
-  const derivAppID = 61696;
+  const derivAppID = 120308;
   const connection = new WebSocket(`wss://ws.binaryws.com/websockets/v3?app_id=${derivAppID}`);
 
   // --- WebSocket connection ---
