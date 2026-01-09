@@ -139,15 +139,15 @@ async function waitForContractResult(contractId) {
       // Check if contract is sold
       if (poc.is_sold) {
         unsubscribe();
+        clearTimeout(timeoutId); // Important: stop the timer
         resolve(poc);
       }
     });
 
     // Safety timeout (e.g. 2 minutes max trade duration)
-    setTimeout(() => {
-      // unsubscribe();
-      // resolve({ error: "Timeout waiting for contract result" });
-      // Let it run; connection manager handles network issues.
+    const timeoutId = setTimeout(() => {
+      unsubscribe();
+      resolve(null); // Resolve with null to trigger fallback
     }, 120000);
   });
 }
@@ -274,10 +274,12 @@ async function buyContract(symbol, tradeType, duration, price, prediction = null
   // We add a small buffer just in case the 'sold' event slightly precedes the db balance update.
   await new Promise(r => setTimeout(r, 500));
 
-  let endingBalance = null;
+  let endingBalance = startingBalance;
   try {
     const finalBal = await connection.send({ balance: 1 });
-    endingBalance = finalBal?.balance?.balance;
+    if (finalBal?.balance?.balance) {
+      endingBalance = finalBal.balance.balance;
+    }
   } catch (e) { }
 
   // Construct metadata
