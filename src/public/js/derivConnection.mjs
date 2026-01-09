@@ -1,6 +1,6 @@
 import { getCurrentToken } from './popupMessages.mjs';
 
-const APP_ID = 61696;
+const APP_ID = 120308;
 const WS_URL = `wss://ws.derivws.com/websockets/v3?app_id=${APP_ID}`;
 
 class DerivConnection {
@@ -53,17 +53,17 @@ class DerivConnection {
 
     // Process buffered requests
     if (this.bufferedRequests.length > 0) {
-        console.log(`[DerivConnection] Flushing ${this.bufferedRequests.length} queued requests.`);
-        while (this.bufferedRequests.length > 0) {
-            const { data, resolve, reject, isSubscription } = this.bufferedRequests.shift();
-            this.sendRaw(data, resolve, reject, isSubscription);
-        }
+      console.log(`[DerivConnection] Flushing ${this.bufferedRequests.length} queued requests.`);
+      while (this.bufferedRequests.length > 0) {
+        const { data, resolve, reject, isSubscription } = this.bufferedRequests.shift();
+        this.sendRaw(data, resolve, reject, isSubscription);
+      }
     }
 
     // Resubscribe to active tick streams
     this.activeTickStreams.forEach((_, symbol) => {
-        console.log(`[DerivConnection] Resubscribing ticks for ${symbol}`);
-        this.sendRaw({ ticks: symbol, subscribe: 1 }, null, null, true);
+      console.log(`[DerivConnection] Resubscribing ticks for ${symbol}`);
+      this.sendRaw({ ticks: symbol, subscribe: 1 }, null, null, true);
     });
   }
 
@@ -80,34 +80,34 @@ class DerivConnection {
 
     // Handle generic errors
     if (msg.error) {
-        // If it's a specific request error, reject the promise
-        if (reqId && this.pendingRequests.has(reqId)) {
-            const { reject, timeout } = this.pendingRequests.get(reqId);
-            clearTimeout(timeout);
-            this.pendingRequests.delete(reqId);
-            reject(msg.error);
-        } else {
-             console.warn('[DerivConnection] API Error:', msg.error);
-        }
-        // Don't return yet, subscriptions might need error context (though usually specific req_id handles it)
+      // If it's a specific request error, reject the promise
+      if (reqId && this.pendingRequests.has(reqId)) {
+        const { reject, timeout } = this.pendingRequests.get(reqId);
+        clearTimeout(timeout);
+        this.pendingRequests.delete(reqId);
+        reject(msg.error);
+      } else {
+        console.warn('[DerivConnection] API Error:', msg.error);
+      }
+      // Don't return yet, subscriptions might need error context (though usually specific req_id handles it)
     }
 
     // Handle Ticks
     if (msg.tick) {
-        const symbol = msg.tick.symbol;
-        // 1. Notify generic subscribers (via subscribeTicks)
-        if(this.tickSubscribers.has(symbol)) {
-            this.tickSubscribers.get(symbol).forEach(cb => cb(msg.tick));
-        }
+      const symbol = msg.tick.symbol;
+      // 1. Notify generic subscribers (via subscribeTicks)
+      if (this.tickSubscribers.has(symbol)) {
+        this.tickSubscribers.get(symbol).forEach(cb => cb(msg.tick));
+      }
 
-        // 2. Handle specific subscription promise (if this was the first tick response)
-        if (reqId && this.pendingRequests.has(reqId)) {
-             const { resolve, timeout } = this.pendingRequests.get(reqId);
-             clearTimeout(timeout);
-             this.pendingRequests.delete(reqId);
-             resolve(msg); // Resolve the initial subscription call with the first tick
-        }
-        return;
+      // 2. Handle specific subscription promise (if this was the first tick response)
+      if (reqId && this.pendingRequests.has(reqId)) {
+        const { resolve, timeout } = this.pendingRequests.get(reqId);
+        clearTimeout(timeout);
+        this.pendingRequests.delete(reqId);
+        resolve(msg); // Resolve the initial subscription call with the first tick
+      }
+      return;
     }
 
     // Handle Standard Responses
@@ -145,7 +145,7 @@ class DerivConnection {
       if (this.isConnected) {
         this.ws.send(JSON.stringify({ ping: 1 }));
       }
-    }, 15000); 
+    }, 15000);
   }
 
   stopPing() {
@@ -171,67 +171,67 @@ class DerivConnection {
     data.req_id = reqId;
 
     if (resolve) {
-        // Set timeout for 30s
-        const timeout = setTimeout(() => {
-            if (this.pendingRequests.has(reqId)) {
-                this.pendingRequests.delete(reqId);
-                if (reject) reject(new Error('Request Timeout'));
-            }
-        }, 30000);
+      // Set timeout for 30s
+      const timeout = setTimeout(() => {
+        if (this.pendingRequests.has(reqId)) {
+          this.pendingRequests.delete(reqId);
+          if (reject) reject(new Error('Request Timeout'));
+        }
+      }, 30000);
 
-        this.pendingRequests.set(reqId, { resolve, reject, timeout });
+      this.pendingRequests.set(reqId, { resolve, reject, timeout });
     }
-    
+
     // Track active tick streams for auto-resubscribe
     if (data.ticks && data.subscribe) {
-        this.activeTickStreams.set(data.ticks, reqId);
+      this.activeTickStreams.set(data.ticks, reqId);
     }
 
     try {
-        this.ws.send(JSON.stringify(data));
+      this.ws.send(JSON.stringify(data));
     } catch (e) {
-        console.error('[DerivConnection] Send failed:', e);
-        if (reject) reject(e);
-        this.pendingRequests.delete(reqId);
+      console.error('[DerivConnection] Send failed:', e);
+      if (reject) reject(e);
+      this.pendingRequests.delete(reqId);
     }
   }
 
   async authorize(token) {
-      this.token = token;
-      try {
-          const resp = await this.send({ authorize: token });
-          console.log('[DerivConnection] Authorized:', resp.authorize?.loginid);
-          return resp;
-      } catch (e) {
-          console.error('[DerivConnection] Auth failed:', e);
-          throw e; // Propagate so caller knows
-      }
+    this.token = token;
+    try {
+      const resp = await this.send({ authorize: token });
+      console.log('[DerivConnection] Authorized:', resp.authorize?.loginid);
+      return resp;
+    } catch (e) {
+      console.error('[DerivConnection] Auth failed:', e);
+      throw e; // Propagate so caller knows
+    }
   }
 
   // Optimized tick subscription that allows multiple listeners for the same symbol
   subscribeTicks(symbol, callback) {
-      if (!this.tickSubscribers.has(symbol)) {
-          this.tickSubscribers.set(symbol, new Set());
-          // Only send the subscribe request if we aren't already listening (or if we are resubscribing)
-           this.send({ ticks: symbol, subscribe: 1 }).catch(e => console.warn('Tick sub failed', e));
-      }
-      
-      this.tickSubscribers.get(symbol).add(callback);
+    if (!this.tickSubscribers.has(symbol)) {
+      this.tickSubscribers.set(symbol, new Set());
+      // Only send the subscribe request if we aren't already listening (or if we are resubscribing)
+      this.send({ ticks: symbol, subscribe: 1 }).catch(e => console.warn('Tick sub failed', e));
+    }
 
-      // Return unsubscribe function
-      return () => {
-          const subs = this.tickSubscribers.get(symbol);
-          if (subs) {
-              subs.delete(callback);
-              if (subs.size === 0) {
-                  this.tickSubscribers.delete(symbol);
-                  this.activeTickStreams.delete(symbol); // Stop auto-resubscribe
-                  if (this.isConnected) {
-                      this.send({ forget_all: 'ticks' }).catch(() => {}); // Generic forget for simplicity, or track exact tick ID
-                  }
-              }
+    this.tickSubscribers.get(symbol).add(callback);
+
+    // Return unsubscribe function
+    return () => {
+      const subs = this.tickSubscribers.get(symbol);
+      if (subs) {
+        subs.delete(callback);
+        if (subs.size === 0) {
+          this.tickSubscribers.delete(symbol);
+          this.activeTickStreams.delete(symbol); // Stop auto-resubscribe
+          if (this.isConnected) {
+            this.send({ forget_all: 'ticks' }).catch(() => { }); // Generic forget for simplicity, or track exact tick ID
           }
-      };
+        }
+      }
+    };
   }
 }
 
