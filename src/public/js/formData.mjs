@@ -43,13 +43,33 @@ document.addEventListener("DOMContentLoaded", function () {
       .then((data) => sentimentsData = data)
       .catch((err) => console.error("Error fetching trade data:", err));
 
-    fetch("/api/data")
-      .then((res) => res.json())
-      .then((data) => {
-        marketsData = data;
-        populateSubmarkets();
-      })
-      .catch((err) => console.error("Error fetching live markets:", err));
+    // Fetch active symbols directly from WS to avoid backend lag
+    api.activeSymbols({
+      active_symbols: "brief",
+      product_type: "basic"
+    }).then((response) => {
+      const formatted = {
+        forex: [],
+        indices: [],
+        commodities: [],
+        cryptocurrency: [],
+        synthetic_index: [],
+      };
+
+      if (response.active_symbols) {
+        response.active_symbols.forEach(item => {
+          const market = item.market;
+          if (formatted[market]) {
+            formatted[market].push({
+              symbol: item.symbol,
+              display_name: item.display_name
+            });
+          }
+        });
+      }
+      marketsData = formatted;
+      populateSubmarkets();
+    }).catch((err) => console.error("Error fetching active symbols directly:", err));
   };
 
   connection.onerror = (err) => console.error("WebSocket error:", err);
